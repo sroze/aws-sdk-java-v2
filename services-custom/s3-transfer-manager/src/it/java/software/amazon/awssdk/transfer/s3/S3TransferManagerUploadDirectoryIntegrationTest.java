@@ -16,6 +16,7 @@
 package software.amazon.awssdk.transfer.s3;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static software.amazon.awssdk.testutils.service.S3BucketUtils.temporaryBucketName;
 import static software.amazon.awssdk.utils.IoUtils.closeQuietly;
 
@@ -25,6 +26,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.AfterClass;
@@ -121,6 +125,23 @@ public class S3TransferManagerUploadDirectoryIntegrationTest extends S3Integrati
         keys.forEach(k -> {
             String path = k.replace(delimiter, "/");
             verifyContent(k, path.substring(prefix.length() + 1) + randomString);
+        });
+    }
+
+    @Test
+    public void uploadDirectory_withRequestTransformer_usesRequestTransformer() throws Exception {
+        Path newSourceForEachUpload = Paths.get(directory.toString(), "bar.txt");
+
+        CompletedUploadDirectory result =
+            tm.uploadDirectory(r -> r.sourceDirectory(directory)
+                                     .bucket(TEST_BUCKET)
+                                     .uploadRequestTransformer(u -> u.toBuilder().source(newSourceForEachUpload).build()))
+              .completionFuture()
+              .get(10, TimeUnit.SECONDS);
+        assertThat(result.failedUploads()).isEmpty();
+
+        s3Client.listObjectsV2Paginator(b -> b.bucket(TEST_BUCKET)).contents().forEach(object -> {
+            verifyContent(object.key(), "bar.txt" + randomString);
         });
     }
 

@@ -43,6 +43,7 @@ import software.amazon.awssdk.transfer.s3.Upload;
 import software.amazon.awssdk.transfer.s3.UploadDirectoryRequest;
 import software.amazon.awssdk.transfer.s3.UploadDirectoryTransfer;
 import software.amazon.awssdk.transfer.s3.UploadRequest;
+import software.amazon.awssdk.transfer.s3.UploadRequestTransformer;
 import software.amazon.awssdk.utils.CompletableFutureUtils;
 import software.amazon.awssdk.utils.Logger;
 import software.amazon.awssdk.utils.StringUtils;
@@ -230,9 +231,13 @@ public class UploadDirectoryHelper {
                                                             .bucket(uploadDirectoryRequest.bucket())
                                                             .key(key)
                                                             .build();
-        return UploadRequest.builder()
-                            .source(path)
-                            .putObjectRequest(putObjectRequest)
-                            .build();
+
+        UploadRequestTransformer uploadRequestTransformer = uploadDirectoryRequest.uploadRequestTransformer()
+                                                                                  .orElse(UploadRequestTransformer.identity());
+
+        return uploadRequestTransformer.transform(UploadRequest.builder()
+                                                               .source(path)
+                                                               .putObjectRequest(putObjectRequest)
+                                                               .build());
     }
 }

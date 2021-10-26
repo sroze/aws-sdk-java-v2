@@ -26,6 +26,8 @@ import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -36,10 +38,13 @@ import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.mockito.ArgumentCaptor;
 import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 import software.amazon.awssdk.transfer.s3.CompletedUpload;
 import software.amazon.awssdk.transfer.s3.CompletedUploadDirectory;
+import software.amazon.awssdk.transfer.s3.TransferRequestOverrideConfiguration;
 import software.amazon.awssdk.transfer.s3.Upload;
 import software.amazon.awssdk.transfer.s3.UploadDirectoryRequest;
 import software.amazon.awssdk.transfer.s3.UploadDirectoryTransfer;
@@ -154,6 +159,56 @@ public class UploadDirectoryHelperTest {
         assertThat(completedUploadDirectory.failedUploads()).hasSize(1);
         assertThat(completedUploadDirectory.failedUploads().iterator().next().exception()).isEqualTo(exception);
         assertThat(completedUploadDirectory.failedUploads().iterator().next().request().source().toString()).isEqualTo("test/2");
+    }
+
+    @Test
+    public void uploadDirectory_withRequestTransformer_usesRequestTransformer() throws Exception {
+        PutObjectResponse putObjectResponse = PutObjectResponse.builder().eTag("1234").build();
+        CompletedUpload completedUpload = CompletedUpload.builder().response(putObjectResponse).build();
+        CompletableFuture<CompletedUpload> successfulFuture = new CompletableFuture<>();
+
+        Upload upload = newUpload(successfulFuture);
+        successfulFuture.complete(completedUpload);
+
+        PutObjectResponse putObjectResponse2 = PutObjectResponse.builder().eTag("5678").build();
+        CompletedUpload completedUpload2 = CompletedUpload.builder().response(putObjectResponse2).build();
+        CompletableFuture<CompletedUpload> failedFuture = new CompletableFuture<>();
+        Upload upload2 = newUpload(failedFuture);
+        failedFuture.complete(completedUpload2);
+
+        ArgumentCaptor<UploadRequest> uploadRequestCaptor = ArgumentCaptor.forClass(UploadRequest.class);
+
+        when(singleUploadFunction.apply(uploadRequestCaptor.capture())).thenReturn(upload, upload2);
+
+        Path newSource = Paths.get("/new/path");
+        PutObjectRequest newPutObjectRequest = PutObjectRequest.builder().build();
+        TransferRequestOverrideConfiguration newOverrideConfig = TransferRequestOverrideConfiguration.builder()
+                                                                                                     .build();
+
+        uploadDirectoryHelper.uploadDirectory(UploadDirectoryRequest.builder()
+                                                                    .sourceDirectory(directory)
+                                                                    .bucket("bucket")
+                                                                    .uploadRequestTransformer(r -> r.toBuilder()
+                                                                                                    .source(newSource)
+                                                                                                    .putObjectRequest(newPutObjectRequest)
+                                                                                                    .overrideConfiguration(newOverrideConfig)
+                                                                                                    .build())
+                                                                    .build())
+                             .completionFuture()
+                             .get(5, TimeUnit.SECONDS);
+
+        List<UploadRequest> uploadRequests = uploadRequestCaptor.getAllValues();
+        assertThat(uploadRequests).hasSize(2);
+        assertThat(uploadRequests).element(0).satisfies(r -> {
+            assertThat(r.source()).isEqualTo(newSource);
+            assertThat(r.putObjectRequest()).isEqualTo(newPutObjectRequest);
+            assertThat(r.overrideConfiguration()).hasValue(newOverrideConfig);
+        });
+        assertThat(uploadRequests).element(1).satisfies(r -> {
+            assertThat(r.source()).isEqualTo(newSource);
+            assertThat(r.putObjectRequest()).isEqualTo(newPutObjectRequest);
+            assertThat(r.overrideConfiguration()).hasValue(newOverrideConfig);
+        });
     }
 
     private Upload newUpload(CompletableFuture<CompletedUpload> future) {

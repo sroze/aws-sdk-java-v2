@@ -87,7 +87,7 @@ public final class UploadRequest implements TransferRequest, ToCopyableBuilder<U
 
     @Override
     public Builder toBuilder() {
-        return new BuilderImpl();
+        return new BuilderImpl(this);
     }
 
     @Override
@@ -218,6 +218,15 @@ public final class UploadRequest implements TransferRequest, ToCopyableBuilder<U
         private PutObjectRequest putObjectRequest;
         private Path source;
         private TransferRequestOverrideConfiguration configuration;
+
+        private BuilderImpl() {
+        }
+
+        private BuilderImpl(UploadRequest uploadRequest) {
+            this.source = uploadRequest.source;
+            this.putObjectRequest = uploadRequest.putObjectRequest;
+            this.configuration = uploadRequest.overrideConfiguration;
+        }
 
         @Override
         public Builder source(Path source) {
